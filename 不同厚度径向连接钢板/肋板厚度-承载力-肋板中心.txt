@@ -1,0 +1,697 @@
+﻿FINI
+/CLE
+/CWD,'D:\ANSYS\capacity_ribthickness'
+/FILNAME,capacity_ribthickness,0
+
+*DO,J,2,16,1
+/PREP7
+
+!定义几何参数
+OUTER_RADIUS=0.5	!井壁外半径
+T1=0.008		!内层钢板厚度
+T2=0.008		!外层钢板厚度
+T3=J/2*0.001		!径向连接钢板一半厚度
+T4=0.09			!井壁厚度
+ZXCD=0.8		!轴向长度
+
+R1=OUTER_RADIUS-T4	!井壁内缘半径
+R2=OUTER_RADIUS-T4+T1	!内层钢板外缘厚度
+R3=OUTER_RADIUS-T2	!外层钢板内缘厚度
+R4=OUTER_RADIUS
+
+!定义材料参数
+FCU=70			!混凝土屈服强度
+
+ELASTICITY_MODULUS_CONCRETE=3.7E4	!混凝土弹性模量
+ELASTICITY_MODULUS_STEEL=2.1E5		!钢板弹性模量
+POISSON_RATIO_CONCRETE=0.2
+POISSON_RATIO_STEEL=0.3
+!QC=31.8					!井壁混凝土屈服强度，取混凝土轴心抗压强度设计值
+QS=235
+
+PH=20
+
+!建立几何模型
+CYL4,0,0,R1,90,R2,110,	!CYL4,XCENTER,YCENTER,RAD1,THETA1,RAD2,THETA2,DEPTH
+CYL4,0,0,R2,90,R3,110,
+CYL4,0,0,R3,90,R4,110,
+ALLSEL,ALL
+csys,1
+!创建径向连接钢板
+VSEL,S,LOC,X,R1+0.00001,R2-0.00001
+LSLA
+KSLL
+KSEL,R,LOC,X,R2-0.00001,R2+0.00001
+KSEL,R,LOC,Y,90-0.001,90+0.001
+*GET,R2KP,KP,,NUM,MIN
+KWPAVE,R2KP
+ALLSEL,ALL
+
+WPROTA,,,90,		!WPROTA,THXY,THYZ,THZX
+WPOFFS,,,-T3		!WPOFFS,XOFFS,YOFFS,ZOFFS
+
+ASEL,ALL
+ASBW,ALL,SEPO		!ASBW,NA,SEPO,KEEP
+
+WPROTA,,,-90
+WPAVE,
+WPCSYS,-1,0
+
+ALLSEL,ALL
+!粘接钢板
+ASEL,S,LOC,X,R2+0.0001,R3-0.0001
+ASEL,R,LOC,Y,95,105
+ASEL,INVE
+AGLUE,ALL
+ALLSEL,ALL
+NUMCMP,ALL
+
+!拖拉成体
+K,100,0,0
+K,101,0,0,ZXCD
+L,100,101
+LESIZE,21,,,40
+!ASEL,S,AREA,,5
+ASEL,ALL
+EXTOPT,ON
+VDRAG,ALL,,,,,,21
+NUMCMP,ALL
+VSEL,S,VOLUME,,5
+VSEL,INVE
+VGLUE,ALL
+NUMCMP,ALL
+
+!-------------------------混凝土本构关系-------------------------
+
+!* 将立方体强度折算为棱柱体强度
+ALFACCU=(1.015*FCU-12.31)/FCU                       !系数
+FC=FCU*ALFACCU                                      !棱柱体抗压强度，用来计算峰值应变
+ALFAA=2.4-0.01*FCU                                  !系数，E0/EP，初始弹模与峰值割线模量比值，用于上升段曲线
+!ALFAD=0.132*FCU**0.785-0.905                        !系数，用于下降段曲线
+EPSC=(700+172*SQRT(FC))*1E-6                        !峰值应变
+SEUP=9                                              !应力应变曲线中上升段考虑的点数，可更改
+SEDN=5                                             !应力应变曲线中下降段考虑的点数，可更改
+secondpoint=0.001088*FCU+0.5112                     !计算对应0.8fc时的第二个应变点，此公式回归得到（杨志江回归）
+*DIM,XE,ARRAY,SEUP+SEDN
+XE(1)=0,secondpoint,0.7,0.75,0.8,0.85,0.9,0.95,1
+XE(10)=1.2,1.5,1.8,2,3
+*DIM,SEDOT_,ARRAY,SEUP+SEDN,2
+*DO,I,1,SEUP+SEDN
+    SEDOT_(I,1)=XE(I)*EPSC
+*ENDDO
+
+!****上升段曲线点****
+*DO,I,1,SEUP
+    X=XE(I)
+    SEDOT_(I,2)=(ALFAA*X+(3-2*ALFAA)*X**2+(ALFAA-2)*X**3)*FC
+*ENDDO
+
+!****下降段曲线点****
+*DO,I,SEUP+1,SEUP+SEDN
+    X=XE(I)
+    SEDOT_(I,2)=FC
+*ENDDO
+EC=SEDOT_(2,2)/SEDOT_(2,1)
+FT=0.395*FC**0.55
+
+
+!!**混凝土单轴受压本构曲线定义
+!DELTA=0.10		    !立方体强度统计变异系数
+!FCUK=(1-1.645*DELTA)*FCU   !将立方体强度值作为平均值折算为标准值，用于判定强度标号
+!
+!ALPHACCU=(1.015*FCU-12.31)/FCU	!李家康系数
+!FC=FCU*ALPHACCU		    !棱柱体抗压强度，用来计算峰值应变
+!ALPHAA=2.4-0.01*FCU	    !系数，E0/EP,初始弹模与峰值割线模量的比值
+!
+!ALPHAD=0.132*FCU**0.785-0.905 !系数，无明确物理意义，用于下降段曲线
+!EPSC=(700+172*SQRT(FC))*1E-6 !峰值应变
+!!EPSU=(1+2*ALPHAD+SQRT(1+4*ALPHAD))/(2*ALPHAD)*EPSC !残余强度0.5FC时对应的应变值，此点之后的曲线不予考虑
+!SEUP=8			    !应力应变曲线中上升段考虑的点数，可更改
+!SEDN=6			    !应力应变曲线中下降段考虑的点数，可更改
+!secondpoint=0.001088*FCU+0.5112	!计算对应0.8fc时的第二个应变点，此公式回归得到（杨志江回归）
+!
+!*DIM,XE,ARRAY,SEUP+SEDN
+!XE(1)=0,secondpoint,0.7,0.75,0.8,0.85,0.9,0.95,1
+!XE(10)=1.2,1.5,1.8,2,3
+!*DIM,SEDOT_,ARRAY,SEUP+SEDN,2
+!*DO,I,1,SEUP+SEDN
+!    SEDOT_(I,1)=XE(I)*EPSC
+!*ENDDO
+!
+!!*上升段曲线点
+!*DO,I,1,SEUP
+!    X=XE(I)
+!    SEDOT_(I,2)=(ALPHAA*X+(3-2*ALPHAA)*X**2+(ALPHAA-2)*X**3)*FC
+!*ENDDO
+!
+!!*下降段曲线点
+!*DO,I,SEUP+1,SEUP+SEDN
+!    X=XE(I)
+!    SEDOT_(I,2)=FC
+!*ENDDO
+!EC=SEDOT_(2,2)/SEDOT_(2,1)
+!FCC=FC
+!FT=0.395*FC**0.55   !单轴抗拉强度
+!
+!!******
+
+
+!定义单元属性
+ET,1,SOLID65		!混凝土单元
+ET,2,SOLID45		!钢板
+ET,3,PLANE42
+
+!KEYOPT,1,1,0			    !考虑大变形（大变形控制）
+!KEYOPT,1,5,0			    !只打印质心的线性解（线性输出控制）
+KEYOPT,1,6,3                        !输出积分点结果（线性输出控制）
+KEYOPT,1,7,1                        !考虑应力松弛，有助于计算收敛（开裂后是否考虑应力松弛）
+
+!混凝土
+MPTEMP,			!清空数据。MPTEMP,STLOC,T1,T2,T3,T4,T5,T6
+MPTEMP,1,0
+MPDATA,EX,1,,EC
+MPDATA,PRXY,1,,POISSON_RATIO_CONCRETE
+!塑性
+
+TB,MISO,1,1,SEUP+SEDN               !多线性各向同性强化，von mises屈服准则
+*DO,I,1,SEUP+SEDN
+    TBPT,,SEDOT_(I,1),SEDOT_(I,2)
+*ENDDO
+TB,CONC,                            !破坏准则，W-W
+TBDATA,,0.5,0.95,FT,-1             !-1,关闭压碎
+/GROPTS,VIEW,1
+TBPLOT,MISO,1
+
+!钢板
+MPTEMP,
+MPTEMP,1,0
+MPDATA,EX,2,,ELASTICITY_MODULUS_STEEL
+MPDATA,PRXY,2,,POISSON_RATIO_STEEL
+!理想弹塑性
+TB,BISO,2,1,2
+TBTEMP,
+TBDATA,,QS
+TBPLOT,BISO,2
+
+!混凝土
+VSEL,S,VOLUME,,5
+VATT,1,,1	!VATT,MAT,REAL,TYPE,
+
+!钢板
+VSEL,INVE
+VATT,2,,2
+
+!ALLSEL,ALL
+!MSHAPE,0,2D			!四边形网格控 
+!MSHKEY,1                        !映射划分控制 
+!AMESH,ALL                       !划分网格     
+
+!网格划分
+!allsel,all
+!smrtsize,4
+!MSHAPE,0,3D
+!MSHKEY,0
+!VSWEEP,ALL
+allsel,all
+type,3
+esize,0.01
+!钢板
+amap,16,22,23,21,24
+amap,24,26,27,18,19
+!肋板
+amap,11,18,17,19,20
+amap,32,21,24,32,25
+
+amap,20,24,25,18,17
+!砼
+ESIZE,0.01
+amap,29,30,29,31,28
+vsel,s,volume,,5
+type,1,
+vsweep,all
+VSEL,INVE
+TYPE,2
+VSWEEP,ALL
+
+!*定义接触对
+CSYS,1	!柱坐标系
+ALLSEL
+ET,4,TARGE170	!目标单元170
+ET,5,CONTA173	!接触单元173
+KEYOPT,5,5,1	!内部接触面调整时关闭小缝隙
+KEYOPT,5,7,2	!对下一个子步预测一个合理的时间增量
+KEYOPT,5,8,2	!??
+KEYOPT,5,9,1	!初始渗透，忽略形状和偏移量引起的初始渗透
+KEYOPT,5,10,2	!接触裂隙,1：关闭裂隙
+
+!KEYOPT,6,9,0
+!KEYOPT,6,12,2
+
+R,3,0,0,10		!R,NSET,R1,R2,R3,R4,R5,R6,Defines the element real constants.设置法向刚度
+REAL,3		!REAL,
+
+MP,MU,2,0.3	!设置材料2的摩擦系数
+!定义目标面
+ASEL,S,AREA,,14
+ASEL,A,AREA,,18
+ASEL,A,AREA,,21
+CM,TARGET_STEEL,AREA
+
+TYPE,4		!TARGE170
+REAL,3
+NSLA,S,1	!NSLA,Type,NKEY; NKEY:0,select only nodes interior to selected areas;1. select allnodes( interior to area, interior to lines, and at keypoints)( associated with the selected areas.
+ESURF,ALL
+
+ESEL,S,TYPE,,4
+EPLOT
+/PSYMB,ESYS,1	    !查看目标面
+
+ALLSEL
+!定义接触面
+ASEL,S,AREA,,25
+ASEL,A,AREA,,27
+ASEL,A,AREA,,28
+CM,CONTACT_CONCRETE,AREA
+TYPE,5	    !CONTA173单元
+REAL,3
+NSLA,S,1
+ESURF,ALL
+ESEL,S,TYPE,,5
+EPLOT
+/PSYMB,ESYS,1	    !查看接触面
+/PSYMB,ESYS,0
+
+ALLSEL,ALL
+GPLOT		    !控制所有实体数据显示
+
+!？？？？？？？？？？？？节点坐标系？？？
+CSYS,1		!激活总体柱坐标系
+NROTAT,ALL	!旋转节点坐标系与激活坐标系平行
+
+!位移约束
+!UZ约束
+ASEL,S,LOC,Z,0
+ASEL,A,LOC,Z,ZXCD
+DA,ALL,UZ,0
+
+!对称约束
+ASEL,S,LOC,Y,89,90+0.0001
+ASEL,A,LOC,Y,110-0.0001,111
+DA,ALL,SYMM
+ALLSEL,ALL
+
+!求解
+/SOLU
+ANTYPE,STATIC
+CNVTOL,F,,0.025,2,0.001			!收敛准则
+!*NR法求解
+PRED,ON
+LNSRCH,ON
+NEQIT,100
+AUTO,ON
+OUTRES,ALL,ALL
+
+!!*弧长法求解
+!NSUBST,200,,,1
+!OUTRES,ALL,ALL
+!ARCLEN,1,1,0.001
+
+/GST,ON		    !Turns on/off Graphical Solution Tracking (GST).
+NROPT,FULL
+NCNV,2
+
+!*加围压
+TIME,PH
+DELTIM,0.05,0.001,5
+ASEL,S,LOC,X,R4
+SFA,ALL,,PRES,PH
+
+ALLSEL,all
+
+SOLVE
+FINI
+
+
+!*****后处理******
+/POST1  
+RSYS,1				!设置结果坐标系为柱坐标系
+!设定白色背景
+/COLOR,DEFAULT			!设置白色背景
+/RGB,INDEX,100,100,100,0
+/RGB,INDEX,80,80,80,13
+/RGB,INDEX,60,60,60,14
+/RGB,INDEX,0,0,0,15
+
+!*********图例设置**********
+/PLOPTS,INFO,2            !多图例显示
+/PLOPTS,DATE,0            !关闭日期和时间
+/PLOPTS,LEG2,OFF
+/PLOPTS,FRAME,OFF         !不显示边框线
+/PLOPTS,FILE,OFF          !不显示文件名
+/PLOPTS,LOGO,OFF          !不显示ansys标志
+!/GFORMAT,F,12,1
+
+SET,FIRST			!读取结果   
+SET,LAST
+SET,PREVIOUS
+PLDISP,2
+FINI
+!时间历程后处理
+/POST26
+NUMVAR,200		!NUMVAR，NV，Specifies the number of variables allowed in POST26. 200 maximum are allowed.
+CSYS,1
+ALLS
+NSEL,S,LOC,Z,ZXCD/2	!选择井壁中部节点
+NSEL,R,LOC,X,R1		!井壁内缘的节点
+NSEL,R,LOC,Y,90-0.01,90+0.0005	!径向连接钢板中线位置
+*GET,NODEA,NODE,,NUM,MAX	!获取A节点的编号
+
+NSEL,S,LOC,Z,ZXCD/2
+NSEL,R,LOC,X,R2
+NSEL,R,LOC,Y,90-0.01,90+0.0005	!径向连接钢板中线位置
+*GET,NODEB,NODE,,NUM,MAX	!获得B点编号
+
+NSEL,S,LOC,Z,ZXCD/2
+NSEL,R,LOC,X,R3
+NSEL,R,LOC,Y,90-0.01,90+0.0005	!径向连接钢板中线位置
+*GET,NODEC,NODE,,NUM,MAX	!获得C点编号
+
+
+NSEL,S,LOC,Z,ZXCD/2
+NSEL,R,LOC,X,R4
+NSEL,R,LOC,Y,90-0.001,90+0.0005
+*GET,NODED,NODE,,NUM,MAX	!D点编号
+
+NSEL,S,LOC,Z,ZXCD/2	!选择井壁中部节点
+NSEL,R,LOC,X,R1		!井壁内缘的节点
+NSEL,R,LOC,Y,110
+*GET,NODEE,NODE,,NUM,MAX
+
+VSEL,S,VOLUME,,5
+NSLV,s,1
+NSEL,R,LOC,Z,ZXCD/2
+NSEL,R,LOC,X,R2
+NSEL,R,LOC,Y,110
+*GET,NODEF_CONCR,NODE,,NUM,MAX    !F点混凝土中的节点
+
+VSEL,S,VOLUME,,5
+VSEL,INVE
+NSLV,s,1
+NSEL,R,LOC,Z,ZXCD/2
+NSEL,R,LOC,X,R2
+NSEL,R,LOC,Y,110
+*GET,NODEF_STEEL,NODE,,NUM,MAX    !F点钢板中的节点
+
+VSEL,S,VOLUME,,5
+NSLV,S,1
+NSEL,R,LOC,Z,ZXCD/2
+NSEL,R,LOC,X,R3
+NSEL,R,LOC,Y,110
+*GET,NODEG_CONCR,NODE,,NUM,MAX	!G点混凝土
+
+VSEL,S,VOLUME,,5
+VSEL,INVE
+NSLV,S,1
+NSEL,R,LOC,Z,ZXCD/2
+NSEL,R,LOC,X,R3
+NSEL,R,LOC,Y,110
+*GET,NODEG_STEEL,NODE,,NUM,MAX	!G点钢板
+
+VSEL,ALL
+NSEL,S,LOC,Z,ZXCD/2
+NSEL,R,LOC,X,R4
+NSEL,R,LOC,Y,110
+*GET,NODEH,NODE,,NUM,MAX
+
+VSEL,S,VOLUME,,5
+NSLV,S,1
+CSYS,1
+NSEL,R,LOC,Z,ZXCD/2
+NSEL,R,LOC,X,R2
+CSYS,0
+NSEL,R,LOC,X,-T3-0.0005,-T3+0.0005
+*GET,NODEI_CONCR,NODE,,NUM,MAX	    !I处混凝土
+
+VSEL,S,VOLUME,,5
+VSEL,INVE
+NSLV,S,1
+CSYS,1
+NSEL,R,LOC,Z,ZXCD/2
+NSEL,R,LOC,X,R2
+CSYS,0
+NSEL,R,LOC,X,-T3-0.0005,-T3+0.0005
+*GET,NODEI_STEEL,NODE,,NUM,MAX	    !I处钢板
+
+VSEL,S,VOLUME,,5
+NSLV,S,1
+CSYS,1
+NSEL,R,LOC,Z,ZXCD/2
+NSEL,R,LOC,X,R3
+CSYS,0
+NSEL,R,LOC,X,-T3-0.0005,-T3+0.0005
+*GET,NODEJ_CONCR,NODE,,NUM,MAX	    !J处混凝土
+
+CSYS,1
+VSEL,S,VOLUME,,5
+VSEL,INVE
+NSLV,S,1
+CSYS,1
+NSEL,R,LOC,Z,ZXCD/2
+NSEL,R,LOC,X,R3
+CSYS,0
+NSEL,R,LOC,X,-T3-0.0005,-T3+0.0005
+*GET,NODEJ_STEEL,NODE,,NUM,MAX	    !J处钢板
+
+ALLSEL,ALL
+!获取径向位移
+NSOL,11,NODEA,U,X,AUX	!NSOL,NVAR,NODE,Item,Comp,Name,SECTOR
+NSOL,21,NODEB,U,X,BUX
+NSOL,31,NODEC,U,X,CUX
+NSOL,41,NODED,U,X,DUX
+
+!获取轴向位移
+ALLSEL,ALL
+NSOL,12,NODEA,U,Z,AUZ	!NSOL,NVAR,NODE,Item,Comp,Name,SECTOR
+NSOL,22,NODEB,U,Z,BUZ
+NSOL,32,NODEC,U,Z,CUZ
+NSOL,42,NODED,U,Z,DUZ
+
+!获取径向应力
+ALLSEL,ALL
+ANSOL,13,NODEA,S,Y,ASX		    !A径向应力
+ANSOL,23,NODEB,S,Y,BSX		    !B径向应力
+ANSOL,33,NODEC,S,Y,CSX		    !C径向应力
+ANSOL,43,NODED,S,Y,DSX		    !D径向应力
+
+!获取环向应力
+ALLSEL,ALL
+ANSOL,14,NODEA,S,X,ASY		    !A环向应力
+ANSOL,24,NODEB,S,X,BSY		    !B环向应力
+ANSOL,34,NODEC,S,X,CSY		    !C环向应力
+ANSOL,44,NODED,S,X,DSY		    !D环向应力
+
+!获取轴向应力
+ALLSEL,ALL
+ANSOL,15,NODEA,S,Z,ASZ		    !A轴向应力
+ANSOL,25,NODEB,S,Z,BSZ		    !B轴向应力
+ANSOL,35,NODEC,S,Z,CSZ		    !C轴向应力
+ANSOL,45,NODED,S,Z,DSZ		    !D轴向应力
+ 
+!等效应力
+ALLSEL,ALL
+ANSOL,16,NODEA,S,EQV,ASEQV          !A等效应力
+ANSOL,26,NODEB,S,EQV,BEQV           !B等效应力
+ANSOL,36,NODEC,S,EQV,CEQV           !C等效应力
+ANSOL,46,NODED,S,EQV,DEQV           !D等效应力
+                                                 
+!获取环向弹性应变
+ALLSEL,ALL
+ANSOL,17,NODEA,EPEL,X,AESY	    !A环向弹性应变
+ANSOL,27,NODEB,EPEL,X,BESY	    !B环向弹性应变
+ANSOL,37,NODEC,EPEL,X,CESY	    !C环向弹性应变
+ANSOL,47,NODED,EPEL,X,DESY	    !D环向弹性应变
+
+!获取环向塑性应变
+ALLSEL,ALL
+ANSOL,18,NODEA,EPPL,X,APSY          !A环向塑性应变
+ANSOL,28,NODEB,EPPL,X,BPSY          !B环向塑性应变
+ANSOL,38,NODEC,EPPL,X,CPSY          !C环向塑性应变
+ANSOL,48,NODED,EPPL,X,DPSY          !D环向塑性应变
+
+!获取轴向弹性应变
+ALLSEL
+ANSOL,19,NODEA,EPEL,Z,AESZ          !A轴向弹性应变
+ANSOL,29,NODEB,EPEL,Z,BESZ          !B轴向弹性应变
+ANSOL,39,NODEC,EPEL,Z,CESZ          !C轴向弹性应变
+ANSOL,49,NODED,EPEL,Z,DESZ          !D轴向弹性应变
+
+!获取轴向塑性应变
+ALLSEL,ALL
+ANSOL,20,NODEA,EPPL,Z,APSZ          !A轴向塑性应变
+ANSOL,30,NODEB,EPPL,Z,BPSZ          !B轴向塑性应变
+ANSOL,40,NODEC,EPPL,Z,CPSZ          !C轴向塑性应变
+ANSOL,50,NODED,EPPL,Z,DPSZ          !D轴向塑性应变
+
+
+STORE,NEW		!STORE,LAB,NPTS
+PROD,4,1,,,,,,1,1,1	!获取各时间点的荷载
+xvar,4
+plvar,11,12,13,14,15,16,17,18,19,20
+*DIM,LUVALUE,ARRAY,80,142
+VGET,LUVALUE(1,1),1
+VGET,LUVALUE(1,2),4
+
+!A点
+VGET,LUVALUE(1,3),11		!A径向位移
+VGET,LUVALUE(1,4),12            !A轴向位移
+VGET,LUVALUE(1,5),13            !A径向应力
+VGET,LUVALUE(1,6),14            !A环向应力
+VGET,LUVALUE(1,7),15            !A轴向应力
+VGET,LUVALUE(1,8),16            !A等效应力
+VGET,LUVALUE(1,9),17            !A环向弹性应变
+VGET,LUVALUE(1,10),18           !A环向塑性应变
+VGET,LUVALUE(1,11),19           !A轴向弹性应变
+VGET,LUVALUE(1,12),20           !A轴向塑性应变
+
+VGET,LUVALUE(1,13),21           !B径向位移   
+VGET,LUVALUE(1,14),22           !B轴向位移   
+VGET,LUVALUE(1,15),23           !B径向应力   
+VGET,LUVALUE(1,16),24           !B环向应力   
+VGET,LUVALUE(1,17),25           !B轴向应力  
+VGET,LUVALUE(1,18),26           !B等效应力  
+VGET,LUVALUE(1,19),27           !B环向弹性应变
+VGET,LUVALUE(1,20),28           !B环向塑性应变
+VGET,LUVALUE(1,21),29           !B轴向弹性应变
+VGET,LUVALUE(1,22),30           !B轴向塑性应变 
+
+VGET,LUVALUE(1,23),31           !C径向位移 
+VGET,LUVALUE(1,24),32           !C轴向位移 
+VGET,LUVALUE(1,25),33           !C径向应力 
+VGET,LUVALUE(1,26),34           !C环向应力 
+VGET,LUVALUE(1,27),35           !C轴向应力 
+VGET,LUVALUE(1,28),36           !C等效应力 
+VGET,LUVALUE(1,29),37           !C环向弹性应变
+VGET,LUVALUE(1,30),38           !C环向塑性应变
+VGET,LUVALUE(1,31),39           !C轴向弹性应变
+VGET,LUVALUE(1,32),40           !C轴向塑性应变
+
+VGET,LUVALUE(1,33),41          !D径向位移     
+VGET,LUVALUE(1,34),42          !D轴向位移    
+VGET,LUVALUE(1,35),43          !D径向应力    
+VGET,LUVALUE(1,36),44          !D环向应力 
+VGET,LUVALUE(1,37),45          !D轴向应力    
+VGET,LUVALUE(1,38),46          !D等效应力        
+VGET,LUVALUE(1,39),47          !D环向弹性应变
+VGET,LUVALUE(1,40),48          !D环向塑性应变
+VGET,LUVALUE(1,41),49          !D轴向弹性应变
+VGET,LUVALUE(1,42),50          !D轴向塑性应变
+
+!VGET,LUVALUE(1,43),51 
+!VGET,LUVALUE(1,44),52
+!VGET,LUVALUE(1,45),53
+!VGET,LUVALUE(1,46),54
+!VGET,LUVALUE(1,47),55
+!VGET,LUVALUE(1,48),56
+!VGET,LUVALUE(1,49),57
+!VGET,LUVALUE(1,50),58
+!VGET,LUVALUE(1,51),59
+!VGET,LUVALUE(1,52),60
+
+!输出A点数据
+*CFOPEN,SHAFT_RIB_A,TXT,,APPEND
+*VWRITE,J
+(14F14.8)
+*VWRITE,
+('      !荷载!!      荷载!        A径向位移    A轴向位移    A径向应力    A环向应力    A轴向应力    A等效应力   A环向弹性应变 A环向塑性应变 A轴向弹性应变 A轴向塑性应变')
+*VWRITE,LUVALUE(1,1),LUVALUE(1,2),LUVALUE(1,3),LUVALUE(1,4),LUVALUE(1,5),LUVALUE(1,6),LUVALUE(1,7),LUVALUE(1,8),LUVALUE(1,9),LUVALUE(1,10),LUVALUE(1,11),LUVALUE(1,12)
+(14F14.8)
+*CFCLOSE
+
+!输出B点数据
+*CFOPEN,SHAFT_RIB_B,TXT,,APPEND
+*VWRITE,J
+(14F14.8)
+*VWRITE,
+('      !荷载!!      荷载!        B径向位移    B轴向位移    B径向应力    B环向应力    B轴向应力    B等效应力   B环向弹性应变 B环向塑性应变 B轴向弹性应变 B轴向塑性应变')
+*VWRITE,LUVALUE(1,1),LUVALUE(1,2),LUVALUE(1,13),LUVALUE(1,14),LUVALUE(1,15),LUVALUE(1,16),LUVALUE(1,17),LUVALUE(1,18),LUVALUE(1,19),LUVALUE(1,20),LUVALUE(1,21),LUVALUE(1,22)
+(14F14.8)
+*CFCLOSE
+
+!输出C点数据
+*CFOPEN,SHAFT_RIB_C,TXT,,APPEND
+*VWRITE,J
+(14F14.8)
+*VWRITE,
+('      !荷载!!      荷载!        C径向位移    C轴向位移    C径向应力    C环向应力    C轴向应力    C等效应力   C环向弹性应变 C环向塑性应变 C轴向弹性应变 C轴向塑性应变')
+*VWRITE,LUVALUE(1,1),LUVALUE(1,2),LUVALUE(1,23),LUVALUE(1,24),LUVALUE(1,25),LUVALUE(1,26),LUVALUE(1,27),LUVALUE(1,28),LUVALUE(1,29),LUVALUE(1,30),LUVALUE(1,31),LUVALUE(1,32)
+(14F14.8)
+*CFCLOSE
+
+!输出D点数据
+*CFOPEN,SHAFT_RIB_D,TXT,,APPEND
+*VWRITE,J
+(14F14.8)
+*VWRITE,
+('      !荷载!!      荷载!        D径向位移    D轴向位移    D径向应力    D环向应力    D轴向应力    D等效应力   D环向弹性应变 D环向塑性应变 D轴向弹性应变 D轴向塑性应变')
+*VWRITE,LUVALUE(1,1),LUVALUE(1,2),LUVALUE(1,33),LUVALUE(1,34),LUVALUE(1,35),LUVALUE(1,36),LUVALUE(1,37),LUVALUE(1,38),LUVALUE(1,39),LUVALUE(1,40),LUVALUE(1,41),LUVALUE(1,42)
+(14F14.8)
+*CFCLOSE
+
+    !mark
+    finish
+    /prep7
+    ALLSEL,all
+    !删除单元，组件，约束，荷载
+MPDE,ALL,ALL		!删除材料
+TBDE,all,all		!delete all data tables for all materials.
+DADEL,ALL,ALL		!delete all constraints on all areas.
+DDEL,ALL,ALL
+SFADEL,ALL,ALL
+VCLEAR,ALL
+VDELE,ALL,,,1
+!ADELE,ALL
+EDELE,ALL
+RDELE,ALL
+ETDEL,ALL
+LDEL,ALL
+KDEL,ALL
+NDEL,ALL
+
+REAL,
+MAT,
+
+    !清除变量
+    OUTER_RADIUS=
+    T1=
+    T2=
+    T3=
+    T4=
+    ZXCD=
+
+    R1=
+    R2=
+    R3=
+    R4=
+
+    FCU=
+
+    ELASTICITY_MODULUS_CONCRETE=
+    ELASTICITY_MODULUS_STEEL=
+    POISSON_RATIO_CONCRETE=
+    POISSON_RATIO_STEEL=
+    QS=
+
+    PH=
+
+    ALFACCU=
+    FC=
+    ALFAA=
+    EPSC=
+    SEUP=
+    SEDN=
+    secondpoint=
+    *SET,SEDOT_
+    *SET,XE
+
+    FINI
+*ENDDO
